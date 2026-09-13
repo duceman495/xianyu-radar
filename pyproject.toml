@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "xianyu-radar"
+version = "0.1.0"
+description = "闲鱼行情雷达：采集 → 分析 → 报告，找供给缺口而不是猜"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+keywords = ["xianyu", "goofish", "market-research", "scraper", "agent-skill"]
+dependencies = ["httpx>=0.27", "playwright>=1.44"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+xianyu-radar = "xianyu_radar.__main__:main"
+
+[tool.setuptools]
+packages = ["xianyu_radar"]
