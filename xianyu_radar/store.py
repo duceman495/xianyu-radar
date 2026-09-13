@@ -17,6 +17,17 @@ from typing import Any, Iterable
 
 DEFAULT_DATA_DIR = Path.home() / ".xianyu-radar"
 
+
+def now_stamp() -> str:
+    """带微秒的时间戳。
+
+    为什么需要微秒：`items_all()` 靠 seen_at 找"最新记录"来跨批次去重。
+    如果精度只到秒，同一秒内写入的两个批次时间戳相同，会取到旧数据。
+    （这个 bug 被 test_items_all_merges_batches_and_dedups 抓到）
+    """
+    t = time.time()
+    return time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(t)) + f".{int(t % 1 * 1_000_000):06d}"
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS batches (
     batch_id    TEXT PRIMARY KEY,
@@ -90,7 +101,7 @@ class Item:
             self.seller, self.credit_level, self.condition,
             1 if self.free_ship else 0, self.publish_time, self.want_num,
             self.url, json.dumps({"tags": self.tags}, ensure_ascii=False),
-            time.strftime("%Y-%m-%dT%H:%M:%S"),
+            now_stamp(),
         )
 
 
@@ -115,7 +126,7 @@ class Store:
         self.conn.execute(
             "INSERT OR REPLACE INTO batches (batch_id, keyword, created_at, pages) "
             "VALUES (?,?,?,?)",
-            (batch_id, keyword, time.strftime("%Y-%m-%dT%H:%M:%S"), pages),
+            (batch_id, keyword, now_stamp(), pages),
         )
         self.conn.commit()
         return batch_id
@@ -149,8 +160,8 @@ class Store:
         self.conn.executemany(
             "INSERT INTO price_history (item_id,title,price,seen_at,batch_id) "
             "VALUES (?,?,?,?,?)",
-            [(it.item_id, it.title, it.price,
-              time.strftime("%Y-%m-%dT%H:%M:%S"), batch_id) for it in items])
+            [(it.item_id, it.title, it.price, now_stamp(), batch_id)
+              for it in items])
         self.conn.commit()
         return len(rows)
 
@@ -175,11 +186,11 @@ class Store:
         """
         cur = self.conn.execute(
             "SELECT i.* FROM items i "
-            "JOIN ("
-            "  SELECT item_id, MAX(seen_at) AS latest "
-            "  FROM items WHERE keyword=? GROUP BY item_id"
-            ") m ON i.item_id = m.item_id AND i.seen_at = m.latest "
-            "WHERE i.keyword=?",
+            "WHERE i.keyword=? AND i.rowid = ("
+            "  SELECT rowid FROM items "
+            "  WHERE keyword=? AND item_id = i.item_id "
+            "  ORDER BY seen_at DESC, rowid DESC LIMIT 1"
+            ")",
             (keyword, keyword))
         rows = cur.fetchall()
         # 同一 item_id 在同一秒的多个批次可能都命中，再去一次重
