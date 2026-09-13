@@ -1,5 +1,11 @@
 # xianyu-radar
 
+[![CI](https://github.com/duceman495/xianyu-radar/actions/workflows/ci.yml/badge.svg)](https://github.com/duceman495/xianyu-radar/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](pyproject.toml)
+[![Tests](https://img.shields.io/badge/tests-55%20passed-brightgreen.svg)](tests/)
+[![Agent Skill](https://img.shields.io/badge/Agent%20Skill-compatible-purple.svg)](SKILL.md)
+
 闲鱼（goofish.com）行情雷达：**采集 → 存储 → 多维分析 → 生成报告**。
 
 一个可独立运行的 CLI / Python 库，也可以作为 AI Agent Skill 使用。
