@@ -166,6 +166,31 @@ class Store:
                 (keyword, keyword))
         return cur.fetchall()
 
+    def items_all(self, keyword: str) -> list[sqlite3.Row]:
+        """合并该关键词**所有批次**的商品，按 item_id 去重，保留最新的记录。
+
+        为什么需要这个：单批次往往只有 1 页 30 条，样本不足会让
+        机会分给出误导性结论（本项目的测试就是从这个真实 bug 来的）。
+        合并多批次能显著提高置信度。
+        """
+        cur = self.conn.execute(
+            "SELECT i.* FROM items i "
+            "JOIN ("
+            "  SELECT item_id, MAX(seen_at) AS latest "
+            "  FROM items WHERE keyword=? GROUP BY item_id"
+            ") m ON i.item_id = m.item_id AND i.seen_at = m.latest "
+            "WHERE i.keyword=?",
+            (keyword, keyword))
+        rows = cur.fetchall()
+        # 同一 item_id 在同一秒的多个批次可能都命中，再去一次重
+        seen: set[str] = set()
+        out: list[sqlite3.Row] = []
+        for r in rows:
+            if r["item_id"] not in seen:
+                seen.add(r["item_id"])
+                out.append(r)
+        return out
+
     def history(self, needle: str, limit: int = 50) -> list[sqlite3.Row]:
         cur = self.conn.execute(
             "SELECT * FROM price_history WHERE item_id=? OR title LIKE ? "

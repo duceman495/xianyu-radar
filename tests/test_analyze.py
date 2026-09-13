@@ -84,10 +84,39 @@ def test_opportunity_prefers_scarce_high_demand():
 
 def test_best_band_ignores_zero_demand():
     """没有需求的价格带不该被选为最佳机会。"""
-    rows = [mk(price=1, want=0) for _ in range(5)] + [mk(price=60, want=50)]
+    rows = [mk(price=1, want=0) for _ in range(30)] + [mk(price=60, want=50) for _ in range(10)]
     o = analyze(rows)
     assert o.best_band is not None
     assert o.best_band.want_total > 0
+
+
+def test_best_band_refuses_on_tiny_sample():
+    """样本过少时不给结论——宁可返回 None 也不误导。
+
+    真实场景：只抓 1 页（30 条）时，核心空档价格带可能完全没有样本，
+    导致最佳机会被误判到一个边角价格带。
+    """
+    rows = [mk(price=1, want=1) for _ in range(17)] + [mk(price=300, want=9)]
+    o = analyze(rows)
+    assert o.n == 18
+    assert o.best_band is None          # 拒绝给结论
+    assert "样本不足" in render_report("测试", o)
+
+
+def test_best_band_works_with_enough_sample():
+    rows = [mk(price=1, want=1) for _ in range(30)] + [mk(price=20, want=500) for _ in range(10)]
+    o = analyze(rows)
+    assert o.best_band is not None
+    assert o.reliable is True
+    assert "偏少" in o.confidence_note   # 40 条：可靠但仍有提示
+
+
+def test_confidence_note_scales_with_sample():
+    assert "不可靠" in analyze([mk(price=1)] * 10).confidence_note
+    assert "偏少" in analyze([mk(price=1)] * 45).confidence_note
+    assert analyze([mk(price=1)] * 80).confidence_note == ""   # 60+ 条无提示
+    assert analyze([mk(price=1)] * 45).reliable is True
+    assert analyze([mk(price=1)] * 10).reliable is False
 
 
 # ------------------------------------------------------------ 总览统计
@@ -155,9 +184,9 @@ def test_credibility_ratio():
 # ------------------------------------------------------------ 报告渲染
 
 def test_report_contains_sections():
-    rows = [mk(title="定制服务A", price=1, want=100),
-            mk(title="教程合集", price=2, want=5),
-            mk(title="工具软件", price=80, want=3)]
+    rows = [mk(title="定制服务A", price=1, want=100) for _ in range(25)] + [
+        mk(title="教程合集", price=2, want=5) for _ in range(20)] + [
+        mk(title="工具软件", price=80, want=3) for _ in range(15)]
     md = render_report("测试词", analyze(rows))
     for section in ["# 闲鱼行情雷达：测试词", "## 1 价格概况", "## 2 供给结构",
                     "## 3 价格带机会分", "## 4 需求头部", "## 7 结论与建议"]:
@@ -166,13 +195,13 @@ def test_report_contains_sections():
 
 def test_report_flags_service_gap():
     """服务型占比低时，报告应给出服务化建议。"""
-    rows = [mk(title="教程合集") for _ in range(10)] + [mk(title="定制服务")]
+    rows = [mk(title="教程合集") for _ in range(40)] + [mk(title="定制服务") for _ in range(5)]
     md = render_report("测试", analyze(rows))
     assert "服务化机会明显" in md or "服务型供给只占" in md
 
 
 def test_report_shows_opportunity_star():
-    rows = [mk(price=1, want=1) for _ in range(10)] + [mk(price=80, want=99)]
+    rows = [mk(price=1, want=1) for _ in range(30)] + [mk(price=80, want=99) for _ in range(10)]
     md = render_report("测试", analyze(rows))
     assert "⭐" in md
 

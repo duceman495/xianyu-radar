@@ -281,3 +281,38 @@ def test_batch_ids_unique_within_same_second(store):
     """同一秒内连续创建批次不能撞 ID。"""
     ids = {store.new_batch("kw") for _ in range(20)}
     assert len(ids) == 20
+
+
+def test_items_all_merges_batches_and_dedups(store):
+    """合并批次分析：跨批次按 item_id 去重，取最新记录。"""
+    import time
+    b1 = store.new_batch("kw")
+    store.add_items(b1, "kw", [
+        Item(item_id="a", title="甲-旧", price=100),
+        Item(item_id="b", title="乙", price=200),
+    ])
+    time.sleep(0.005)
+    b2 = store.new_batch("kw")
+    store.add_items(b2, "kw", [
+        Item(item_id="a", title="甲-新", price=88),   # 同 id，价格变了
+        Item(item_id="c", title="丙", price=300),
+    ])
+
+    rows = store.items_all("kw")
+    ids = sorted(r["item_id"] for r in rows)
+    assert ids == ["a", "b", "c"]                     # 去重后 3 条
+    a = [r for r in rows if r["item_id"] == "a"][0]
+    assert a["price"] == 88                            # 取最新批次的值
+
+
+def test_items_all_vs_latest_batch(store):
+    """items_all 应比单批次看到更多样本。"""
+    import time
+    b1 = store.new_batch("kw")
+    store.add_items(b1, "kw", [Item(item_id="x", price=1)])
+    time.sleep(0.005)
+    b2 = store.new_batch("kw")
+    store.add_items(b2, "kw", [Item(item_id="y", price=2)])
+
+    assert len(store.items("kw")) == 1        # 只看最新批次
+    assert len(store.items_all("kw")) == 2    # 合并后 2 条

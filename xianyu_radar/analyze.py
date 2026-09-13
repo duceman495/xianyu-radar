@@ -160,9 +160,42 @@ class Overview:
 
     @property
     def best_band(self) -> Band | None:
-        """机会分最高的价格带（要求有实际需求）。"""
-        cands = [b for b in self.bands if b.count and b.want_total > 0]
+        """机会分最高的价格带。
+
+        只考虑需求信号**足够可信**的价格带，避免小样本导致误判：
+        - 必须真的有人想要（want_total > 0）
+        - 该价格带的需求不能只来自单个商品（want_median 与 total 的比例合理）
+
+        为什么需要这个保护：实测发现，同一关键词只抓 1 页（30 条）时，
+        "10-30元" 这个真实空档会因为没有样本而消失，最佳机会被误判到
+        "200-500元"（1 条供给、9 人想要）。样本量决定结论可靠性，
+        所以这里宁可返回 None 也不给误导性的高机会分。
+        """
+        if self.n < 20:          # 样本太少，任何结论都不可靠
+            return None
+        cands = [b for b in self.bands
+                 if b.count and b.want_total > 0 and b.want_median > 0]
         return max(cands, key=lambda b: b.opportunity) if cands else None
+
+    @property
+    def reliable(self) -> bool:
+        """样本量是否足以支撑结论。"""
+        return self.n >= 40
+
+    @property
+    def confidence_note(self) -> str:
+        """给报告用的样本量提示。
+
+        阈值与 `reliable` 保持一致：>=60 条无提示，40-59 条提醒，
+        <40 条明确说结论不可靠。
+        """
+        if self.n >= 60:
+            return ""
+        if self.n >= 40:
+            return (f"⚠️ 样本量偏少（{self.n} 条），机会分仅供参考。"
+                    "建议加 `--pages 3` 以上重跑以提高置信度。")
+        return (f"⚠️⚠️ 样本量过少（{self.n} 条），结论**不可靠**。"
+                "请用 `--pages 2` 或更多页重新抓取后再看机会分。")
 
     @property
     def crowded(self) -> bool:
@@ -284,6 +317,8 @@ def render_report(keyword: str, o: Overview, meta: dict[str, Any] | None = None)
 
     # 3 机会分
     L.append("## 3 价格带机会分 ⭐ 本报告的核心\n")
+    if o.confidence_note:
+        L.append(f"> {o.confidence_note}\n")
     L.append("> `机会分 = 需求强度 / (供给量 + 1)` — 高分代表**有人在找但没人在卖**\n")
     L.append("| 价格带 | 供给 | 占比 | 累计想要 | 中位想要 | **机会分** |")
     L.append("|---|---|---|---|---|---|")
@@ -301,6 +336,10 @@ def render_report(keyword: str, o: Overview, meta: dict[str, Any] | None = None)
         L.append("")
         L.append(f"**最佳机会：{bb.label} 元**（机会分 {bb.opportunity}，"
                  f"供给仅 {bb.count} 条，累计 {bb.want_total} 人想要）")
+    elif o.n < 20:
+        L.append("")
+        L.append("**样本不足，无法给出可靠的最佳机会。** "
+                 "请用 `--pages 2` 以上重新抓取。")
     empty = [b.label for b in o.bands if not b.count]
     if empty:
         L.append(f"\n**空白价格带**（无人供给）：{', '.join(empty)}")

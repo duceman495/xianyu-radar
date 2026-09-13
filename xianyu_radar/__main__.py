@@ -159,8 +159,16 @@ def cmd_search(args: argparse.Namespace) -> int:
 def cmd_analyze(args: argparse.Namespace) -> int:
     kw = args.keyword
     with Store(args.db) as store:
-        rows = store.items(kw)
-        batches = store.batches(kw, limit=1)
+        if getattr(args, "all", False):
+            rows = store.items_all(kw)
+            batches = store.batches(kw, limit=1)
+            if batches and rows:
+                meta0 = dict(batches[0])
+                meta0["batch_id"] = f"全部批次合并（{len(batches)}）"
+                batches = [meta0]
+        else:
+            rows = store.items(kw)
+            batches = store.batches(kw, limit=1)
     if not rows:
         die(f"没有「{kw}」的数据，请先运行 search")
 
@@ -184,7 +192,7 @@ def cmd_compare(args: argparse.Namespace) -> int:
     rows_out = []
     with Store(args.db) as store:
         for kw in kws:
-            rows = store.items(kw)
+            rows = store.items_all(kw)   # 合并批次，避免小样本误判
             if not rows:
                 p(f"  [跳过] {kw}：无数据")
                 continue
@@ -335,6 +343,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     s = sub.add_parser("analyze", help="生成行情报告", parents=[common])
     s.add_argument("keyword")
+    s.add_argument("--all", action="store_true",
+                   help="合并所有批次分析（样本更多，结论更稳，推荐）")
     s.set_defaults(func=cmd_analyze)
 
     s = sub.add_parser("compare", help="多关键词对比", parents=[common])
